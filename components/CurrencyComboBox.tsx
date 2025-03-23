@@ -23,6 +23,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Currencies, Currency } from "@/lib/currencies"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import SkeletonWrapper from "./SkeletonWrapper"
+import { UserSettings } from "@prisma/client"
+import { UpdatedUserCurrency } from "@/app/wizard/_actions/userSettings"
+import { toast } from "sonner"
+import { nullable } from "zod"
 
 
 
@@ -33,36 +39,85 @@ export function CurrencyComboBox() {
     null
   )
 
+  const userSettings = useQuery<UserSettings>({
+    queryKey: ['userSettings'],
+    queryFn: () => fetch("/api/user-settings").then((res) => res.json())
+  });
+
+  React.useEffect(() => {
+    if (!userSettings.data) return;
+    const userCurrency = Currencies.find(currency => currency.value === userSettings.data.currency);
+    if (userCurrency) {
+      setSelectedOption(userCurrency);
+    }
+  }, [userSettings.data]);
+
+  const mutation = useMutation({
+    mutationFn: UpdatedUserCurrency,
+    onSuccess: (data: UserSettings) => {
+      toast.success(`Currency updated successfully 🎉`, {
+        id: "update-currency"
+      });
+
+      setSelectedOption(Currencies.find(c => c.value === data.currency) || null);
+    },
+    onError: (e) => {
+      toast.error("Something went wrong.", {
+        id: "update-currency"
+      });
+    }
+
+
+  })
+
+  const selectOption = React.useCallback((value: Currency | null) => {
+    if (!value) {
+      toast.error("Please select a currency.");
+      return;
+    }
+
+    toast.loading("Updating currency...", {
+      id: "update-currency",
+    });
+
+    mutation.mutate(value.value)
+
+  }, [mutation])
+
   if (isDesktop) {
     return (
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="w-full justify-start">
-            {selectedOption ? <>{selectedOption.label}</> : <>Set currency</>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[200px] p-0" align="start">
-          <OptionList setOpen={setOpen} setSelectedOption
-          ={setSelectedOption} />
-        </PopoverContent>
-      </Popover>
+      <SkeletonWrapper isLoading={userSettings.isFetching} >
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="w-full justify-start" disabled={mutation.isPending}>
+              {selectedOption ? <>{selectedOption.label}</> : <>Set currency</>}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[200px] p-0" align="start">
+            <OptionList setOpen={setOpen} setSelectedOption
+              ={selectOption} />
+          </PopoverContent>
+        </Popover>
+      </SkeletonWrapper>
     )
   }
 
   return (
-    <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild>
-        <Button variant="outline" className="w-full justify-start">
-          {selectedOption ? <>{selectedOption.label}</> : <>Set currency</>}
-        </Button>
-      </DrawerTrigger>
-      <DrawerContent>
-        <div className="mt-4 border-t">
-          <OptionList setOpen={setOpen} setSelectedOption
-          ={setSelectedOption} />
-        </div>
-      </DrawerContent>
-    </Drawer>
+    <SkeletonWrapper isLoading={userSettings.isFetching} >
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger asChild>
+          <Button variant="outline" className="w-full justify-start" disabled={mutation.isPending}>
+            {selectedOption ? <>{selectedOption.label}</> : <>Set currency</>}
+          </Button>
+        </DrawerTrigger>
+        <DrawerContent>
+          <div className="mt-4 border-t">
+            <OptionList setOpen={setOpen} setSelectedOption
+              ={selectOption} />
+          </div>
+        </DrawerContent>
+      </Drawer>
+    </SkeletonWrapper>
   )
 }
 
@@ -87,9 +142,9 @@ function OptionList({
               value={currency.value}
               onSelect={(value) => {
                 setSelectedOption
-                (
-                  Currencies.find((priority) => priority.value === value) || null
-                )
+                  (
+                    Currencies.find((priority) => priority.value === value) || null
+                  )
                 setOpen(false)
               }}
             >
